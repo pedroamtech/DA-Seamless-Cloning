@@ -80,5 +80,5 @@ def poolCreation(root_data, root_output, num_process=10):
 if __name__ == "__main__":
     
     for d in config.PARTITIONS:
-        #Path(config.ROOT_DATA1) / d,  Path(config.ROOT_DATA2) / d,
-        poolCreation([Path(config.ROOT_DATA3) / d], Path(config.ROOT_POOL_PERSON) / d)  
+        #Path(config.ROOT_DATA2) / d,  Path(config.ROOT_DATA3) / d,
+        poolCreation([Path(config.ROOT_DATA1) / d], Path(config.ROOT_POOL_PERSON) / d)  

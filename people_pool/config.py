@@ -1,6 +1,6 @@
-ROOT_DATA3 = 'C:/Users/pedroam/Documents/Data-Augmentation/Datasets/VisDrone/img'
+ROOT_DATA1 = 'C:/Users/pedroam/Documents/Data-Augmentation/Datasets/VisDrone/img'
 #ROOT_DATA2 = '//192.168.1.240/monitoreo_inteligente/Jorge/Data/SSA_Original/modelo_1/train/limpiar'
-#ROOT_DATA1 = '//192.168.1.240/monitoreo_inteligente/Jorge/Data/Others_Original'
+#ROOT_DATA3 = '//192.168.1.240/monitoreo_inteligente/Jorge/Data/Others_Original'
 ROOT_POOL_PERSON = 'C:/Users/pedroam/Documents/Data-Augmentation/Pool_person'
 
 ROOT_DATA_AUG = 'C:/Users/pedroam/Documents/Data-Augmentation/Datasets/VisDrone/img'
