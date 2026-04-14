@@ -1,0 +1,24 @@
+# PyTorch with native CUDA 13.0 support
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch
+torchvision
+torchaudio
+
+# Core dependencies - updated for Python 3.13
+numpy>=2.0.0
+Pillow
+huggingface_hub
+einops
+safetensors
+
+# 1_view_cluster.py
+pandas
+matplotlib
+scikit-learn
+
+# 2_people_pool.py
+opencv-python
+tqdm
+
+# 3_seamless_aug_depth.py
+# (opencv-python, numpy, pandas, tqdm already listed above)
