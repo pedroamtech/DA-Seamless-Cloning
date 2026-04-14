@@ -6,6 +6,9 @@ ROOT_POOL_PERSON = 'C:/Users/pedroam/Documents/Data-Augmentation/pool_person'
 ROOT_DATA_AUG = 'C:/Users/pedroam/Documents/Data-Augmentation/Datasets/VisDrone/img'
 ROOT_OUTPUT_AUG = 'C:/Users/pedroam/Documents/Data-Augmentation/Output_Augmented'
 
+# Añadir esta línea a tu archivo config.py
+ROOT_VGGT_METADATA = 'C:/Users/pedroam/Documents/Data-Augmentation/Datasets/VisDrone/img/train/images/camera_data_vx.csv'
+
 
 PARTITIONS = ['train']
 
