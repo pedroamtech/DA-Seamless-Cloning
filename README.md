@@ -1,107 +1,130 @@
 # DA-Seamless-Cloning
 
-Un proyecto de clonado sin costuras (seamless cloning) usando OpenCV para combinar imágenes de manera natural y realista.
+Pipeline de **Data Augmentation** para datasets de detección de personas, combinando estimación de cámara con IA (VGGT) y fusión de imágenes por Seamless Cloning (OpenCV).
 
 ## Descripción
 
-Este proyecto implementa la técnica de **seamless cloning** utilizando OpenCV para insertar objetos de una imagen en otra de forma que se vean naturalmente integrados. La técnica utiliza algoritmos avanzados de procesamiento de imágenes para hacer que la fusión sea imperceptible.
+El proyecto extrae parámetros de cámara de imágenes reales usando el modelo **VGGT** (Facebook), agrupa las vistas en clusters, construye un pool de recortes de personas y los inserta en nuevas imágenes de fondo con restricción de profundidad mediante `cv2.seamlessClone`.
 
-## Características
+## Pipeline
 
-- Clonado sin costuras de objetos entre imágenes
-- Uso del algoritmo `NORMAL_CLONE` de OpenCV
-- Creación automática de máscaras para definir áreas de clonado
-- Procesamiento eficiente de imágenes
+```
+1_extract_information.py   →   1_view_cluster.py
+                                      ↓
+                           2_people_pool.py
+                                      ↓
+                           3_seamless_aug_depth.py
+```
 
-## Tecnologías Utilizadas
-
-- **Python 3.x**
-- **OpenCV** (`cv2`) - Para procesamiento de imágenes
-- **NumPy** - Para manipulación de arrays y operaciones matemáticas
+| Script | Función |
+|---|---|
+| `1_extract_information.py` | Extrae parámetros intrínsecos/extrínsecos de cámara y genera depth maps con VGGT |
+| `1_view_cluster.py` | Visualiza en 3D los grupos de cámaras (clustering KMeans) |
+| `2_people_pool.py` | Recorta personas del dataset (YOLO) y genera `pool.csv` con metadatos |
+| `3_seamless_aug_depth.py` | Aplica Seamless Cloning guiado por profundidad y genera anotaciones YOLO |
 
 ## Requisitos
 
-Antes de ejecutar el proyecto, asegúrate de tener instaladas las siguientes dependencias:
+### Entorno
+
+Python 3.13 + CUDA 13.0 (recomendado GPU NVIDIA)
+
+### Instalación
 
 ```bash
-pip install opencv-python
-pip install numpy
+# 1. Clonar el repositorio
+git clone https://github.com/pedroam/DA-Seamless-Cloning.git
+cd DA-Seamless-Cloning
+
+# 2. Crear y activar entorno conda
+conda create -n dataaug python=3.13
+conda activate dataaug
+
+# 3. Instalar dependencias
+pip install -r requirements_da.txt
 ```
+
+> **Nota:** El paquete `vggt` ya viene incluido en la carpeta `vggt/` del repositorio. No es necesario instalarlo por separado.
 
 ## Estructura del Proyecto
 
 ```
 DA-Seamless-Cloning/
-├── seamless_cloning.py          # Script principal
-├── images/
-│   ├── airplane.jpg             # Imagen fuente (objeto a clonar)
-│   ├── sky.jpg                  # Imagen destino
-│   └── opencv-seamless-cloning-example.jpg  # Resultado generado
-└── README.md                    # Este archivo
+├── 1_extract_information.py     # Paso 1: Extracción de parámetros de cámara
+├── 1_view_cluster.py            # Paso 1b: Visualización de clusters de cámara
+├── 2_people_pool.py             # Paso 2: Creación del pool de personas
+├── 3_seamless_aug_depth.py      # Paso 3: Augmentación con seamless cloning
+├── requirements_da.txt          # Dependencias del proyecto
+├── vggt/                        # Repositorio VGGT (Facebook)
+├── people_pool/
+│   └── config.py                # Configuración de rutas y parámetros
+├── images/                      # Imágenes de ejemplo
+├── input/                       # Datos de entrada
+└── output/                      # Resultados generados
 ```
 
 ## Uso
 
-1. **Preparar las imágenes:**
-   - Coloca tu imagen fuente en `images/airplane.jpg`
-   - Coloca tu imagen destino en `images/sky.jpg`
+### 1. Extraer información de cámara
 
-2. **Ejecutar el script:**
-   ```bash
-   python seamless_cloning.py
-   ```
+Selecciona la carpeta de imágenes y la carpeta de salida mediante el diálogo de archivos:
 
-3. **Ver el resultado:**
-   - La imagen resultante se guardará como `images/opencv-seamless-cloning-example.jpg`
-
-## Personalización
-
-### Modificar la máscara
-
-Para cambiar el área que se va a clonar, modifica los puntos del polígono en el código:
-
-```python
-poly = np.array([ [4,80], [30,54], [151,63], [254,37], [298,90], [272,134], [43,122] ], np.int32)
+```bash
+python 1_extract_information.py
 ```
 
-### Cambiar la posición de destino
+Genera:
+- `camera_data_vx.csv` — parámetros de cámara (posición, rotación, focal, altura relativa)
+- `depth_maps/` — mapas de profundidad por imagen
 
-Para cambiar dónde se colocará el objeto clonado, modifica las coordenadas del centro:
+### 2. Visualizar clusters de cámara
 
-```python
-center = (800,100)  # (x, y)
+```bash
+python 1_view_cluster.py
 ```
 
-### Modos de clonado
+Muestra una visualización 3D interactiva con las poses de cámara agrupadas.
 
-OpenCV ofrece diferentes modos de clonado:
-- `cv2.NORMAL_CLONE` - Clonado normal (por defecto)
-- `cv2.MIXED_CLONE` - Clonado mixto
-- `cv2.MONOCHROME_TRANSFER` - Transferencia monocromática
+### 3. Crear pool de personas
 
-## Ejemplo de Resultado
+Configura las rutas en `people_pool/config.py` y ejecuta:
 
-El proyecto toma un avión de una imagen y lo coloca seamlessly en una imagen de cielo, creando un resultado natural y realista.
+```bash
+python 2_people_pool.py
+```
 
-## Contribuir
+Genera `pool.csv` con los recortes de personas y sus metadatos de cámara.
 
-Las contribuciones son bienvenidas. Para contribuir:
+### 4. Augmentación con Seamless Cloning
 
-1. Fork el proyecto
-2. Crea una rama para tu característica (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
+```bash
+python 3_seamless_aug_depth.py
+```
 
-## Licencia
+Inserta personas del pool en imágenes de fondo respetando la profundidad relativa, y genera las anotaciones YOLO correspondientes.
 
-Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
+## Tecnologías
+
+- **[VGGT](https://github.com/facebookresearch/vggt)** — Estimación de cámara y profundidad
+- **PyTorch** + CUDA — Inferencia en GPU
+- **OpenCV** (`cv2.seamlessClone`) — Fusión de imágenes
+- **scikit-learn** — Clustering KMeans de poses de cámara
+- **pandas / numpy** — Procesamiento de datos
+
+## Configuración (`people_pool/config.py`)
+
+| Variable | Descripción |
+|---|---|
+| `ROOT_DATA1` | Ruta raíz del dataset |
+| `ROOT_POOL_PERSON` | Carpeta de salida del pool |
+| `ROOT_OUTPUT_AUG` | Carpeta de salida de imágenes augmentadas |
+| `ROOT_VGGT_METADATA` | Ruta al `camera_data_vx.csv` |
+| `PARTITIONS` | Lista de particiones (e.g. `['train', 'val']`) |
+| `NUM_PEOPLE_X_IMG` | Personas a insertar por imagen |
 
 ## Autor
 
-**Pedro AM**
-- GitHub: [@pedroam](https://github.com/pedroam)
-Inspirado en técnicas de computer vision modernas
+**Pedro AM** · [@pedroam](https://github.com/pedroam)
 
 ---
 
