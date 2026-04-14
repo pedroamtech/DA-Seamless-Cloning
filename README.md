@@ -130,7 +130,7 @@ Inserta personas del pool en imágenes de fondo respetando la profundidad relati
 
 ## Autor
 
-**Pedro AM** · [@pedroam](https://github.com/pedroam)
+**Pedro AM** · [@pedroamtech](https://github.com/pedroamtech)
 
 ---
 
