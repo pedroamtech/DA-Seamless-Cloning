@@ -23,6 +23,13 @@ El proyecto extrae parámetros de cámara de imágenes reales usando el modelo *
 | `2_people_pool.py` | Recorta personas del dataset (YOLO) y genera `pool.csv` con metadatos |
 | `3_seamless_aug_depth.py` | Aplica Seamless Cloning guiado por profundidad y genera anotaciones YOLO |
 
+### Scripts auxiliares
+
+| Script | Función |
+|---|---|
+| `video_to_frames.py` | Extrae frames de un video y los guarda como imágenes |
+| `yolo_person_labeler.py` | Herramienta de etiquetado manual de personas en formato YOLO |
+
 ## Requisitos
 
 ### Entorno
@@ -54,13 +61,12 @@ DA-Seamless-Cloning/
 ├── 1_view_cluster.py            # Paso 1b: Visualización de clusters de cámara
 ├── 2_people_pool.py             # Paso 2: Creación del pool de personas
 ├── 3_seamless_aug_depth.py      # Paso 3: Augmentación con seamless cloning
+├── video_to_frames.py           # Aux: Extracción de frames de video
+├── yolo_person_labeler.py       # Aux: Etiquetado manual en formato YOLO
 ├── requirements_da.txt          # Dependencias del proyecto
 ├── vggt/                        # Repositorio VGGT (Facebook)
-├── people_pool/
-│   └── config.py                # Configuración de rutas y parámetros
-├── images/                      # Imágenes de ejemplo
-├── input/                       # Datos de entrada
-└── output/                      # Resultados generados
+└── people_pool/
+    └── config.py                # Configuración de rutas y parámetros
 ```
 
 ## Uso
