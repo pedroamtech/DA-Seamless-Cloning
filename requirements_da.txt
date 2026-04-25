@@ -1,24 +1,48 @@
-# PyTorch with native CUDA 13.0 support
+# =============================================================================
+# DA-Seamless-Cloning — Dependencias del proyecto
+# Python 3.13 | CUDA 13.0
+# =============================================================================
+
+# PyTorch con soporte nativo CUDA 13.0
+# Instalar desde el índice oficial de PyTorch:
 --extra-index-url https://download.pytorch.org/whl/cu130
 torch
 torchvision
 torchaudio
 
-# Core dependencies - updated for Python 3.13
+# =============================================================================
+# Dependencias principales
+# =============================================================================
+
+# Procesamiento numérico y de imágenes
 numpy>=2.0.0
 Pillow
-huggingface_hub
-einops
-safetensors
 
-# 1_view_cluster.py
-pandas
+# Visualización
 matplotlib
+
+# Datos tabulares
+pandas
+
+# Clustering y escalado (1_view_cluster.py)
 scikit-learn
 
-# 2_people_pool.py
+# Visión por computadora (2_people_pool.py, 3_seamless_aug_depth.py,
+#                         yolo_person_labeler.py, video_to_frames.py)
 opencv-python
+
+# Barras de progreso (2_people_pool.py, 3_seamless_aug_depth.py)
 tqdm
 
-# 3_seamless_aug_depth.py
-# (opencv-python, numpy, pandas, tqdm already listed above)
+# =============================================================================
+# Dependencias del modelo VGGT (1_extract_information.py)
+# =============================================================================
+
+# Descarga de pesos desde Hugging Face Hub
+huggingface_hub
+
+# Operaciones de tensor (requerido por la arquitectura VGGT)
+einops
+
+# Carga de pesos en formato safetensors
+safetensors

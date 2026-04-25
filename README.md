@@ -4,7 +4,7 @@ Pipeline de **Data Augmentation** para datasets de detección de personas, combi
 
 ## Descripción
 
-El proyecto extrae parámetros de cámara de imágenes reales usando el modelo **VGGT** (Facebook), agrupa las vistas en clusters, construye un pool de recortes de personas y los inserta en nuevas imágenes de fondo con restricción de profundidad mediante `cv2.seamlessClone`.
+El proyecto extrae parámetros de cámara de imágenes reales usando el modelo **VGGT** (Facebook Research), agrupa las vistas en clusters, construye un pool de recortes de personas y los inserta en nuevas imágenes de fondo con restricción de profundidad mediante `cv2.seamlessClone`.
 
 ## Pipeline
 
@@ -28,19 +28,37 @@ El proyecto extrae parámetros de cámara de imágenes reales usando el modelo *
 | Script | Función |
 |---|---|
 | `video_to_frames.py` | Extrae frames de un video y los guarda como imágenes |
-| `yolo_person_labeler.py` | Herramienta de etiquetado manual de personas en formato YOLO |
+| `yolo_person_labeler.py` | Herramienta de etiquetado manual/automático de personas en formato YOLO |
 
 ## Requisitos
 
 ### Entorno
 
-Python 3.13 + CUDA 13.0 (recomendado GPU NVIDIA)
+- **Python** 3.13
+- **CUDA** 13.0 (recomendado, GPU NVIDIA)
+- **PyTorch** compatible con CUDA 13.0 (instalado desde `download.pytorch.org/whl/cu130`)
+
+### Dependencias Python
+
+| Paquete | Uso |
+|---|---|
+| `torch` / `torchvision` / `torchaudio` | Inferencia en GPU con VGGT |
+| `numpy >= 2.0.0` | Procesamiento numérico general |
+| `Pillow` | Lectura/escritura de imágenes |
+| `matplotlib` | Visualización de depth maps y clusters 3D |
+| `pandas` | Lectura/escritura de CSVs de metadatos |
+| `scikit-learn` | Clustering KMeans de poses de cámara |
+| `opencv-python` | Seamless Cloning, recorte de personas, I/O de video |
+| `tqdm` | Barras de progreso en procesamiento por lotes |
+| `huggingface_hub` | Descarga de pesos del modelo VGGT |
+| `einops` | Operaciones de tensor requeridas por VGGT |
+| `safetensors` | Carga de pesos en formato seguro |
 
 ### Instalación
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/pedroam/DA-Seamless-Cloning.git
+git clone https://github.com/pedroamtech/DA-Seamless-Cloning.git
 cd DA-Seamless-Cloning
 
 # 2. Crear y activar entorno conda
@@ -62,9 +80,9 @@ DA-Seamless-Cloning/
 ├── 2_people_pool.py             # Paso 2: Creación del pool de personas
 ├── 3_seamless_aug_depth.py      # Paso 3: Augmentación con seamless cloning
 ├── video_to_frames.py           # Aux: Extracción de frames de video
-├── yolo_person_labeler.py       # Aux: Etiquetado manual en formato YOLO
+├── yolo_person_labeler.py       # Aux: Etiquetado automático en formato YOLO
 ├── requirements_da.txt          # Dependencias del proyecto
-├── vggt/                        # Repositorio VGGT (Facebook)
+├── vggt/                        # Repositorio VGGT (Facebook Research)
 └── people_pool/
     └── config.py                # Configuración de rutas y parámetros
 ```
@@ -89,7 +107,7 @@ Genera:
 python 1_view_cluster.py
 ```
 
-Muestra una visualización 3D interactiva con las poses de cámara agrupadas.
+Muestra una visualización 3D interactiva con las poses de cámara agrupadas por KMeans. El número de clusters se configura mediante un diálogo al inicio.
 
 ### 3. Crear pool de personas
 
@@ -99,7 +117,7 @@ Configura las rutas en `people_pool/config.py` y ejecuta:
 python 2_people_pool.py
 ```
 
-Genera `pool.csv` con los recortes de personas y sus metadatos de cámara.
+Genera `pool.csv` con los recortes de personas y sus metadatos de cámara (posición, focal, altura relativa).
 
 ### 4. Augmentación con Seamless Cloning
 
@@ -109,13 +127,28 @@ python 3_seamless_aug_depth.py
 
 Inserta personas del pool en imágenes de fondo respetando la profundidad relativa, y genera las anotaciones YOLO correspondientes.
 
+### 5. Herramientas auxiliares
+
+**Extraer frames de video:**
+```bash
+python video_to_frames.py
+```
+
+**Etiquetar/revisar personas manualmente:**
+```bash
+python yolo_person_labeler.py
+```
+
+Controles del etiquetador: `ESPACIO` detectar | `A` procesar todo | `N`/`P` navegar | `S` guardar | `D` borrar | `Q` salir.
+
 ## Tecnologías
 
-- **[VGGT](https://github.com/facebookresearch/vggt)** — Estimación de cámara y profundidad
+- **[VGGT](https://github.com/facebookresearch/vggt)** — Estimación de cámara y profundidad (Facebook Research)
 - **PyTorch** + CUDA — Inferencia en GPU
-- **OpenCV** (`cv2.seamlessClone`) — Fusión de imágenes
+- **OpenCV** (`cv2.seamlessClone`) — Fusión de imágenes y procesamiento de video
 - **scikit-learn** — Clustering KMeans de poses de cámara
-- **pandas / numpy** — Procesamiento de datos
+- **pandas / numpy** — Procesamiento de datos tabulares y numéricos
+- **Hugging Face Hub** — Descarga de pesos del modelo VGGT-1B
 
 ## Configuración (`people_pool/config.py`)
 
