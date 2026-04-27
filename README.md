@@ -48,7 +48,10 @@ pip install -r requirements_da.txt
 ```
 
 ### Autenticación Hugging Face (Recomendado)
-Para evitar límites de velocidad y avisos, configura tu token de Hugging Face en Windows (PowerShell):
+Para evitar límites de velocidad y avisos, sigue estos pasos:
+1. **Crear cuenta:** Regístrate en [huggingface.co/join](https://huggingface.co/join).
+2. **Generar Token:** Ve a [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) y crea un token de tipo **Read**.
+3. **Configurar en Windows:** Ejecuta en PowerShell:
 ```powershell
 [System.Environment]::SetEnvironmentVariable('HF_TOKEN', 'TU_TOKEN_AQUI', 'User')
 ```
