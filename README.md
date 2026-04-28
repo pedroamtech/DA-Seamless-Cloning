@@ -13,7 +13,7 @@ El proyecto extrae parámetros de cámara de imágenes reales usando el modelo *
                                       ↓
                                3_people_pool.py
                                       ↓
-                         4_seamless_aug_depth_v6.py
+                         4_seamless_aug_depth_v9.py
 ```
 
 | Script | Función |
@@ -21,7 +21,7 @@ El proyecto extrae parámetros de cámara de imágenes reales usando el modelo *
 | `1_extract_information.py` | Extrae parámetros de cámara y genera depth maps (Visual y RAW) con VGGT. Soporta CLI y HF_TOKEN. |
 | `2_view_cluster.py` | Visualiza en 3D los grupos de cámaras (clustering KMeans). |
 | `3_people_pool.py` | Recorta personas del dataset (YOLO) y genera `pool.csv` con metadatos de cámara integrados. |
-| `4_seamless_aug_depth_v6.py` | **V6 Definitiva:** Aplica Seamless Cloning realista usando escalado métrico absoluto, enmascaramiento semántico dinámico para evitar fondos inválidos, y Edge Padding para conservar la textura de las personas. |
+| `4_seamless_aug_depth_v9.py` | **V9 Definitiva:** Pipeline superior que combina segmentación de alta precisión (YOLOv8x-Seg), heurísticas anatómicas estrictas y Alpha Blending con Feathering para insertar recortes con 100% de nitidez y cero lavado de color. |
 
 ### Scripts auxiliares
 
@@ -63,7 +63,7 @@ DA-Seamless-Cloning/
 ├── 1_extract_information.py     # Paso 1: Extracción de cámara y profundidad
 ├── 2_view_cluster.py            # Paso 2: Visualización de clusters
 ├── 3_people_pool.py             # Paso 3: Creación del pool de personas
-├── 4_seamless_aug_depth_v6.py   # Paso 4: Augmentación (V6 Definitiva)
+├── 4_seamless_aug_depth_v9.py   # Paso 4: Augmentación (V9 Definitiva)
 ├── config.py                    # Configuración global de rutas
 ├── vggt/                        # Código fuente del modelo VGGT
 ├── people_pool/                 # Scripts de apoyo para el pool
@@ -86,16 +86,17 @@ Configura las rutas en `config.py` y ejecuta:
 python 3_people_pool.py
 ```
 
-### 3. Augmentación con Profundidad (V6 Definitiva)
-Este script busca automáticamente los mapas de profundidad RAW (`depth_*.png`) generados en el paso 1 para realizar un pegado geométricamente coherente, con ajuste de escala métrica y filtrado de resolución.
+### 3. Augmentación con Profundidad e IA (V9 Definitiva)
+Este script busca automáticamente los mapas de profundidad RAW (`depth_*.png`) generados en el paso 1 para realizar un pegado geométricamente coherente, con ajuste de escala métrica, filtros anatómicos severos y segmentación basada en YOLOv8x-Seg.
 ```bash
-python 4_seamless_aug_depth_v6.py
+python 4_seamless_aug_depth_v9.py
 ```
 
 ## Tecnologías
 
 - **[VGGT](https://github.com/facebookresearch/vggt)** — Estimación de cámara y profundidad (Facebook Research).
-- **OpenCV** (`cv2.seamlessClone`) — Fusión de imágenes realista.
+- **OpenCV** (`cv2.GaussianBlur`, `cv2.copyMakeBorder`) — Procesamiento morfológico y de imagen.
+- **Ultralytics (YOLOv8)** — Segmentación paramétrica y extracción de siluetas.
 - **Hugging Face Hub** — Gestión del modelo pre-entrenado VGGT-1B.
 
 ## Autor

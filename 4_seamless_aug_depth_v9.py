@@ -9,34 +9,30 @@ from tqdm import tqdm
 from glob import glob
 from datetime import datetime
 
+# Importar YOLO para la segmentación precisa
+from ultralytics import YOLO
+import torch
+import logging
+logging.getLogger("ultralytics").setLevel(logging.WARNING)
+
 # Añadir el directorio people_pool al path para importar config
 sys.path.insert(0, str(Path(__file__).parent / 'people_pool'))
 import config
 
 # =============================================================================
-# CONFIGURACIÓN V6
+# CONFIGURACIÓN V9 (Alpha Blending + Heurísticas Anatómicas)
 # =============================================================================
 
-NUM_PEOPLE_PER_IMAGE = getattr(config, 'NUM_PEOPLE_X_IMG', 20)
+NUM_PEOPLE_PER_IMAGE = getattr(config, 'NUM_PEOPLE_X_IMG', 15)
 PITCH_TOLERANCE = 25.0
-MIN_SCALE = 0.35  # Solo permitimos reducir hasta un 35% para mantener coherencia de resolución
-MAX_SCALE = 1.30  # Solo permitimos agrandar hasta un 30% para evitar pixelación
+MIN_SCALE = 0.35  
+MAX_SCALE = 1.30  
 MIN_CROP_SIZE = 10
 BORDER_MARGIN = 20
 
-# -----------------------------------------------------------------------------
-# CONFIGURACIÓN DE SEAMLESS CLONING (Solución a efectos fantasma)
-# -----------------------------------------------------------------------------
-# cv2.NORMAL_CLONE = 1 (Recomendado con Edge Padding para evitar transparencia)
-# cv2.MIXED_CLONE = 2 (Mezcla texturas, útil si el fondo es muy liso)
-# cv2.MONOCHROME_TRANSFER = 3 (Transfiere detalles pero no color)
+# cv2.NORMAL_CLONE = 1
+# cv2.MIXED_CLONE = 2
 BLEND_FLAG = cv2.NORMAL_CLONE
-
-# PADDING: Cuántos píxeles extra añadir alrededor del recorte.
-# Esto evita que los brazos o pies que tocan el borde del recorte se 
-# difuminen y desaparezcan al mezclarse con el fondo.
-EDGE_PADDING = 15 
-# -----------------------------------------------------------------------------
 
 ROOT_DATA       = Path(config.ROOT_DATA1)
 ROOT_OUTPUT_AUG = Path(config.ROOT_OUTPUT_AUG)
@@ -70,13 +66,12 @@ def calculate_metric_scale_v5(row_patch, bg_meta, d_target_norm):
     f_bg   = safe_float(bg_meta.get('focal_y', 1000.0))
     
     scale = (z_orig_m / (z_target_m + 1e-6)) * (f_bg / f_orig)
-    return scale  # RETORNAMOS LA ESCALA PURA, SIN CORTARLA CON CLIP
+    return scale
 
 def get_road_color_stats(bg_img, walkable_points):
     hsv_img = cv2.cvtColor(bg_img, cv2.COLOR_BGR2HSV)
     h, w = bg_img.shape[:2]
     pixels = []
-    
     if walkable_points:
         for x, y in walkable_points:
             x, y = int(x), int(y)
@@ -84,7 +79,6 @@ def get_road_color_stats(bg_img, walkable_points):
             x1, x2 = max(0, x-5), min(w, x+5)
             patch = hsv_img[y1:y2, x1:x2].reshape(-1, 3)
             pixels.append(patch)
-    
     if not pixels:
         y1, y2 = int(h*0.8), int(h*0.95)
         x1, x2 = int(w*0.3), int(w*0.7)
@@ -104,41 +98,79 @@ def create_semantic_ground_mask(bg_img, d_map, walkable_points):
     mean_hsv, std_hsv = get_road_color_stats(bg_img, walkable_points)
     lower_bound = np.clip(mean_hsv - std_hsv * 2.5, 0, 255).astype(np.uint8)
     upper_bound = np.clip(mean_hsv + std_hsv * 2.5, 0, 255).astype(np.uint8)
-    
     if std_hsv[1] < 40 or mean_hsv[1] < 40:
-        lower_bound[0] = 0
-        upper_bound[0] = 179
+        lower_bound[0] = 0; upper_bound[0] = 179
         
     valid_color_mask = cv2.inRange(hsv_img, lower_bound, upper_bound)
-    
     invalid_mask = np.zeros((bg_h, bg_w), dtype=np.uint8)
     invalid_mask[d_map > 0.98] = 255
     
-    lower_green = np.array([30, 40, 40])
-    upper_green = np.array([90, 255, 255])
-    green_mask = cv2.inRange(hsv_img, lower_green, upper_green)
-    green_mask = cv2.dilate(green_mask, np.ones((9,9), np.uint8), iterations=2)
+    lower_green = np.array([30, 40, 40]); upper_green = np.array([90, 255, 255])
+    green_mask = cv2.dilate(cv2.inRange(hsv_img, lower_green, upper_green), np.ones((9,9), np.uint8), iterations=2)
     invalid_mask = cv2.bitwise_or(invalid_mask, green_mask)
     
-    depth_8u = (d_map * 255).astype(np.uint8)
-    edges = cv2.Canny(depth_8u, 15, 60)
-    edges = cv2.dilate(edges, np.ones((11,11), np.uint8), iterations=2)
+    edges = cv2.dilate(cv2.Canny((d_map * 255).astype(np.uint8), 15, 60), np.ones((11,11), np.uint8), iterations=2)
     invalid_mask = cv2.bitwise_or(invalid_mask, edges)
     
     final_valid_mask = cv2.bitwise_and(valid_color_mask, cv2.bitwise_not(invalid_mask))
-    
-    final_valid_mask[0:BORDER_MARGIN, :] = 0
-    final_valid_mask[-BORDER_MARGIN:, :] = 0
-    final_valid_mask[:, 0:BORDER_MARGIN] = 0
-    final_valid_mask[:, -BORDER_MARGIN:] = 0
-    
+    final_valid_mask[0:BORDER_MARGIN, :] = 0; final_valid_mask[-BORDER_MARGIN:, :] = 0
+    final_valid_mask[:, 0:BORDER_MARGIN] = 0; final_valid_mask[:, -BORDER_MARGIN:] = 0
     return final_valid_mask
 
+
 # =============================================================================
-# PIPELINE PRINCIPAL V6
+# EXTRACCIÓN DE POLÍGONO CON YOLO-SEG (LearnOpenCV Style)
 # =============================================================================
 
-def augment_partition(partition: str):
+def extract_yolo_polygon_mask(crop_orig, nw, nh, yolo_model):
+    """
+    Usa YOLOv8x-Seg sobre la imagen original de alta resolución para aislar a la persona,
+    y luego redimensiona la máscara binaria al tamaño final (nw, nh).
+    """
+    orig_h, orig_w = crop_orig.shape[:2]
+    mask_binary = np.zeros((nh, nw), dtype=np.uint8)
+    
+    # Inferencia en el parche de alta resolución con parámetros ultra precisos
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    results = yolo_model.predict(source=crop_orig, classes=[0], verbose=False, device=device, conf=0.1, retina_masks=True, imgsz=640)
+    
+    if len(results) > 0 and results[0].masks is not None:
+        mask_tensor = results[0].masks.data[0].cpu().numpy()
+        
+        # Redimensionamos la máscara directamente al tamaño final (nw, nh)
+        mask_binary = cv2.resize(mask_tensor, (nw, nh), interpolation=cv2.INTER_NEAREST)
+        mask_binary = (mask_binary * 255).astype(np.uint8)
+        
+        # Validación 1: Si la máscara es muy pequeña (menos del 15% del área), probablemente falló.
+        if cv2.countNonZero(mask_binary) < (nw * nh * 0.15):
+            return None
+            
+        # Validación 2: Heurística Matemática de Truncamiento/Oclusión
+        # Una silueta humana completa no debe estar cortada masivamente por los bordes.
+        
+        # Borde inferior (pies): Un par de pies no ocupan todo el ancho. Si ocupa >45%, el torso está cortado.
+        bottom_width = np.count_nonzero(mask_binary[-1, :])
+        if bottom_width > (nw * 0.45): return None
+        
+        # Borde superior (cabeza): La cabeza es estrecha. Si ocupa >35%, el cuerpo no tiene cabeza o está ocluido.
+        top_width = np.count_nonzero(mask_binary[0, :])
+        if top_width > (nw * 0.35): return None
+        
+        # Bordes laterales (brazos/torso lateral): Si está pegado masivamente a los lados, está cortado verticalmente.
+        left_height = np.count_nonzero(mask_binary[:, 0])
+        right_height = np.count_nonzero(mask_binary[:, -1])
+        if left_height > (nh * 0.40) or right_height > (nh * 0.40): return None
+            
+        return mask_binary
+
+    # Si YOLO no detectó nada, retornamos None para saltar este recorte en lugar de usar un octágono.
+    return None
+
+# =============================================================================
+# PIPELINE PRINCIPAL V7
+# =============================================================================
+
+def augment_partition(partition: str, yolo_model):
     images_dir, labels_dir = ROOT_DATA / partition / 'images', ROOT_DATA / partition / 'labels'
     pool_csv_p = ROOT_POOL_CSV / partition / 'pool.csv'
     out_img_dir, out_lbl_dir = ROOT_OUTPUT_AUG / partition / 'images', ROOT_OUTPUT_AUG / partition / 'labels'
@@ -150,7 +182,7 @@ def augment_partition(partition: str):
 
     bg_images = [p for p in glob(str(images_dir / '*.jpg')) if not os.path.basename(p).startswith('depth_')]
 
-    for bg_path in tqdm(bg_images, desc=f'V6 Augment {partition}', ncols=100):
+    for bg_path in tqdm(bg_images, desc=f'V7 YOLO-Seg {partition}', ncols=100):
         bg_name = os.path.basename(bg_path)
         bg_img = cv2.imread(bg_path)
         if bg_img is None: continue
@@ -189,13 +221,9 @@ def augment_partition(partition: str):
 
         result_img, final_labels = bg_img.copy(), original_labels.copy()
         
-        # 1. Filtro de Pitch (Ángulo)
         bg_pitch = safe_float(bg_meta.get('pitch', -45.0), -45.0)
         df_compatible = df_pool[abs(df_pool['pitch'] - bg_pitch) <= PITCH_TOLERANCE]
         
-        # 2. Filtro de Coherencia de Resolución (Focal Length)
-        # Esto asegura que la imagen de donde viene el parche y la imagen destino
-        # tengan una resolución (tamaño de píxel) similar.
         bg_focal = safe_float(bg_meta.get('focal_y', 1000.0), 1000.0)
         df_comp_res = df_compatible[
             (df_compatible['focal_y'] >= bg_focal * 0.6) & 
@@ -203,8 +231,18 @@ def augment_partition(partition: str):
         ]
         if len(df_comp_res) >= NUM_PEOPLE_PER_IMAGE:
             df_compatible = df_comp_res
-        elif len(df_compatible) < NUM_PEOPLE_PER_IMAGE: 
-            df_compatible = df_pool
+        # Filtro ULTRA ESTRICTO de CUERPO COMPLETO
+        # 1. Aspect Ratio: Entre 0.28 y 0.48 (Rango matemático de una persona de pie)
+        # 2. Altura Mínima: Al menos 45 píxeles originales para garantizar información visual para YOLO.
+        aspect_ratio = df_compatible['width_patch'] / df_compatible['height_patch']
+        df_full_body = df_compatible[
+            (aspect_ratio >= 0.28) & 
+            (aspect_ratio <= 0.48) & 
+            (df_compatible['height_patch'] >= 45)
+        ]
+        
+        if len(df_full_body) >= NUM_PEOPLE_PER_IMAGE // 2:
+            df_compatible = df_full_body
 
         placed = 0
         candidates = df_compatible.sample(n=min(NUM_PEOPLE_PER_IMAGE * 10, len(df_compatible)), replace=True)
@@ -218,13 +256,8 @@ def augment_partition(partition: str):
                 idx = random.randint(0, len(valid_x) - 1)
                 cx, cy = int(valid_x[idx]), int(valid_y[idx])
                 
-                # ESCALADO MÉTRICO ABSOLUTO
                 scale = calculate_metric_scale_v5(row, bg_meta, d_map[cy, cx])
                 
-                # RECHAZO POR COHERENCIA DE RESOLUCIÓN Y TAMAÑO:
-                # En lugar de "forzar" (clip) el tamaño, rechazamos el parche si requiere 
-                # achicarse o agrandarse demasiado. Esto obliga al script a buscar un parche 
-                # que naturalmente fue capturado a una distancia similar.
                 if scale < MIN_SCALE or scale > MAX_SCALE: continue
                 
                 nw, nh = int(row['width_patch'] * scale), int(row['height_patch'] * scale)
@@ -235,29 +268,58 @@ def augment_partition(partition: str):
 
                 crop = cv2.resize(crop_orig, (nw, nh), interpolation=cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC)
                 
-                # TÉCNICA DE EDGE PADDING PARA EVITAR PARTES DESAPARECIDAS
-                # Se añaden píxeles alrededor clonando los bordes del recorte original
-                crop_padded = cv2.copyMakeBorder(crop, EDGE_PADDING, EDGE_PADDING, EDGE_PADDING, EDGE_PADDING, cv2.BORDER_REPLICATE)
+                # Extraemos la máscara exacta inferiendo sobre el recorte de Alta Resolución
+                mask_yolo = extract_yolo_polygon_mask(crop_orig, nw, nh, yolo_model)
                 
-                # La máscara aplica 255 solo al recorte original, dejando el padding en 0.
-                # Esto asegura que la matemática de Seamless Cloning difumine el padding 
-                # en lugar de difuminar el cuerpo de la persona.
-                mask = np.zeros(crop_padded.shape[:2], dtype=np.uint8)
-                mask[EDGE_PADDING:-EDGE_PADDING, EDGE_PADDING:-EDGE_PADDING] = 255
+                # Si YOLO no logró una segmentación coherente, descartamos este parche
+                if mask_yolo is None:
+                    continue
+                
+                # =====================================================================
+                # SOLUCIÓN: ALPHA BLENDING CON FEATHERING
+                # =====================================================================
+                # 1. Desenfoque suave SOLO A LA MÁSCARA para integrar los bordes.
+                # El tamaño del blur es proporcional al parche (mínimo 3x3).
+                blur_size = max(3, int(min(nw, nh) * 0.05))
+                if blur_size % 2 == 0: blur_size += 1
+                mask_blurred = cv2.GaussianBlur(mask_yolo, (blur_size, blur_size), 0)
+                
+                # 2. Convertimos a canal Alfa (0.0 a 1.0)
+                alpha = mask_blurred.astype(float) / 255.0
+                alpha_3 = cv2.merge([alpha, alpha, alpha])
                 
                 try:
-                    # Aplicamos seamlessClone usando la bandera configurable
-                    result_img = cv2.seamlessClone(crop_padded, result_img, mask, (cx, cy), BLEND_FLAG)
+                    # 3. Recortamos la región de fondo donde irá el parche
+                    bg_roi = result_img[y1:y1+nh, x1:x1+nw]
+                    
+                    # 4. Pegado matemático (Conserva 100% del color interior del parche)
+                    blended = (crop.astype(float) * alpha_3) + (bg_roi.astype(float) * (1.0 - alpha_3))
+                    
+                    # 5. Insertamos en la imagen final
+                    result_img[y1:y1+nh, x1:x1+nw] = blended.astype(np.uint8)
+                    
                     final_labels.append(f"0 {cx/bg_w:.6f} {cy/bg_h:.6f} {nw/bg_w:.6f} {nh/bg_h:.6f}")
                     placed += 1
                     break
                 except Exception as e:
                     continue
 
-        out_name = f"{os.path.splitext(bg_name)[0]}_v6_{datetime.now().strftime('%H%M%S%f')}"
+        out_name = f"{os.path.splitext(bg_name)[0]}_v9_{datetime.now().strftime('%H%M%S%f')}"
         cv2.imwrite(str(out_img_dir / (out_name + '.jpg')), result_img)
         with open(str(out_lbl_dir / (out_name + '.txt')), 'w') as f: f.write('\n'.join(final_labels))
 
 if __name__ == '__main__':
-    print("="*60); print("  Seamless Augmentation V6: Edge Padding & Blend Flags"); print("="*60)
-    for p in PARTITIONS: augment_partition(p)
+    print("="*60)
+    print("  Seamless Augmentation V9: Alpha Blending Definitivo")
+    print("="*60)
+    
+    # Cargamos el modelo YOLO de segmentación una sola vez en memoria
+    # Usamos YOLOv8x-seg (Extra Large) para máxima precisión en recortes difíciles.
+    print("[INFO] Cargando modelo YOLOv8x-Seg (Alta Precisión)...")
+    try:
+        yolo_model = YOLO('yolov8x-seg.pt')
+    except Exception as e:
+        print(f"[ERROR] No se pudo cargar YOLOv8x-seg: {e}")
+        sys.exit(1)
+        
+    for p in PARTITIONS: augment_partition(p, yolo_model)
