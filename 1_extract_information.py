@@ -15,6 +15,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from tkinter import filedialog, Tk
 from huggingface_hub import login
+
 # Importaciones de VGGT
 try:
     from vggt.models.vggt import VGGT
@@ -49,11 +50,9 @@ def extract_information_vx(batch_size=2):
     if hf_token:
         login(token=hf_token)
     else:
-        # Intentar detectar token de forma segura para evitar el crash
         from huggingface_hub.utils import get_token
         hf_token = get_token()
         if hf_token is None:
-            # Silenciar el warning de unauthenticated requests si no hay token
             import logging
             logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
     
@@ -84,28 +83,40 @@ def extract_information_vx(batch_size=2):
         intrinsics = intrinsics.squeeze(0).float().cpu().numpy()
 
         for j, img_path in enumerate(batch_files):
-            # A. Guardar mapa de profundidad
+            # A. Guardar mapa de profundidad (Escala de Grises 8-bit)
             d_map = depth_data[j, :, :, 0]
-            norm_d = (d_map - d_map.min()) / (d_map.max() - d_map.min() + 1e-8)
-            depth_viz = (plt.cm.turbo(norm_d)[:, :, :3] * 255).astype(np.uint8)
+            d_min, d_max = d_map.min(), d_map.max()
+            norm_d = (d_map - d_min) / (d_max - d_min + 1e-8)
+            
+            # 0 = cerca, 255 = lejos
+            depth_gray = (norm_d * 255).astype(np.uint8)
             depth_name = f"depth_{os.path.basename(img_path)}"
-            Image.fromarray(depth_viz).save(os.path.join(depth_dir, depth_name))
+            Image.fromarray(depth_gray).save(os.path.join(depth_dir, depth_name))
 
             # B. Extraer Pose (Mundo <- Cámara)
             R, t = extrinsics[j][:3, :3], extrinsics[j][:3, 3]
             C_world = -np.dot(R.T, t)
             height_rel = abs(C_world[2])
 
+            # C. Calcular Ángulo de Inclinación (Pitch)
+            optical_axis_world = R[:, 2]
+            pitch_rad = np.arcsin(np.clip(optical_axis_world[2], -1.0, 1.0))
+            pitch_deg = np.degrees(pitch_rad)
+
             data_records.append({
                 "image_name": os.path.basename(img_path),
                 "depth_map_path": depth_name,
+                "depth_min": d_min,
+                "depth_max": d_max,
                 "focal_x": intrinsics[j][0, 0],
+                "focal_y": intrinsics[j][1, 1],
                 "principal_x": intrinsics[j][0, 2],
                 "principal_y": intrinsics[j][1, 2],
                 "pos_x": C_world[0], 
                 "pos_y": C_world[1], 
                 "pos_z": C_world[2],
                 "height": height_rel,
+                "pitch": pitch_deg,
                 "R_world_flat": R.T.flatten().tolist()
             })
             
